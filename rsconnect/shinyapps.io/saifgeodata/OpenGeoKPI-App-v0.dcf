@@ -1,0 +1,12 @@
+name: OpenGeoKPI-App-v0
+title: OpenGeoKPI-App-v0
+username:
+account: saifgeodata
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2279704
+bundleId: 3131842
+url: https://saifgeodata.shinyapps.io/OpenGeoKPI-App-v0/
+when: 1589203822.85749
+asMultiple: FALSE
+asStatic: FALSE
