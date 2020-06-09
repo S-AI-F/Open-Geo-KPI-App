@@ -17,11 +17,12 @@ library(ggplot2)
 library(rgdal)
 library(shinyWidgets)
 library(eurostat)
+library(rnaturalearth)
+library(wbstats)
 
+########### Load Europe data ----
 
-###########################
-#### Load data
-###########################
+# get demography data
 
 tps00001_data <- eurostat::get_eurostat("tps00001",
                                         time_format = "date",
@@ -29,12 +30,16 @@ tps00001_data <- eurostat::get_eurostat("tps00001",
     dplyr::select(geo,time,values) %>% 
     dplyr::rename(demography = values) 
 
+# get unemployement rate data
+
 tps00203_data <- eurostat::get_eurostat("tps00203",
                                         time_format = "date",
                                         stringsAsFactors = FALSE)  %>% 
     dplyr::filter(unit == "PC_ACT") %>%
     dplyr::select(geo,time,values) %>%
     dplyr::rename(unemployement_rate = values) 
+
+# get fertility rate data
 
 tps00199_data <- eurostat::get_eurostat("tps00199",
                                         time_format = "date",
@@ -110,15 +115,86 @@ map_data = sp::merge(geodata,
 map_data@data$CNTR_NAME = label_eurostat(map_data@data$geo, dic = "geo", countrycode = "country.name")
 
 
+
+
+########### Load World data ----
+
+# get map data
+geodata_world <- ne_countries()
+# rename country code and name variables
+names(geodata_world)[names(geodata_world) == "iso_a3"] <- "iso3c"
+names(geodata_world)[names(geodata_world) == "name"] <- "NAME"
+
+# get worldbank data
+
+
+attribute_data_world <- wb(
+    indicator = c(# people indicators
+        "SP.POP.TOTL","SE.PRM.ENRR","SL.TLF.CACT.ZS","SH.STA.MMRT",
+        # porverty and inequality indicators
+        "SI.POV.NAHC", "SI.POV.GINI",
+        # Environment
+        "AG.LND.AGRI.ZS","EN.ATM.CO2E.PC","EN.ATM.PM25.MC.M3",
+        # Economy
+        "NY.GDP.MKTP.CD","NE.GDI.TOTL.KD.ZG","SL.GDP.PCAP.EM.KD",
+        # States and markets
+        "GC.REV.XGRT.CN", "GC.XPN.TOTL.CN","MS.MIL.XPND.GD.ZS","GB.XPD.RSDV.GD.ZS",
+        # Global links
+        "DT.DOD.DECT.CD"),
+    return_wide = TRUE,
+    POSIXct = TRUE
+)
+
+# rename indicators
+attribute_data_world = attribute_data_world %>% 
+    dplyr::rename(# people indicators
+        Population_Total = SP.POP.TOTL,
+        School_enrollment_primary = SE.PRM.ENRR,
+        Labor_force_participation_rate = SL.TLF.CACT.ZS,
+        Maternal_mortality_ratio = SH.STA.MMRT,
+        # porverty and inequality indicators
+        Poverty_headcount_ratio = SI.POV.NAHC,
+        GINI_index = SI.POV.GINI,
+        # Environment
+        Agricultural_land = AG.LND.AGRI.ZS,
+        CO2_emission = EN.ATM.CO2E.PC,
+        PM2.5_air_pollution = EN.ATM.PM25.MC.M3,
+        # Economy
+        GDP = NY.GDP.MKTP.CD,
+        Gross_capital_formation = NE.GDI.TOTL.KD.ZG,
+        GDP_per_person_employed = SL.GDP.PCAP.EM.KD,
+        # States and markets
+        Government_revenue = GC.REV.XGRT.CN,
+        Government_Expense  = GC.XPN.TOTL.CN,
+        Military_expenditure = MS.MIL.XPND.GD.ZS,
+        Research_and_development_expenditure = GB.XPD.RSDV.GD.ZS,
+        # Global Links
+        External_debt_stocks = DT.DOD.DECT.CD)
+
+
+# merge with attribute data with geodata
+map_data_world = sp::merge(geodata_world,
+                           attribute_data_world,
+                           by = "iso3c",
+                           duplicateGeoms = TRUE)
+
+map_data_world = map_data_world[!is.na(map_data_world@data$date_ct), ]
+
 ##########################
 #### prepare plot
 ###########################
 
 
-
 date_vector = seq.Date(from = min(map_data@data$time),
                        to = max(map_data@data$time),
                        by = "years")
+AnimationEnd_Europe = length(date_vector) - 1
+
+date_vector_world = seq.Date(from = min(map_data_world@data$date_ct),
+                             to = max(map_data_world@data$date_ct),
+                             by = "years")
+
+AnimationEnd_world = length(date_vector_world) - 1
 
 ##########################
 #### ui
@@ -126,6 +202,79 @@ date_vector = seq.Date(from = min(map_data@data$time),
 
 
 ui = navbarPage("OpenGeoKPI",
+                
+                ### World panel ----
+                tabPanel("World",
+                         ### First row ----
+                         fluidRow(
+                             ### Specify filters ----
+                             column(3,
+                                    ### Specify kpi filter ----
+                                    selectInput("selectKPI_world",
+                                                "Select indicator:",
+                                                list(`People` = list("Total population" = "Population_Total",
+                                                                     "School enrollment primary" = "School_enrollment_primary",
+                                                                     "Labor force participation rate" = "Labor_force_participation_rate",
+                                                                     "Maternal mortality ratio" = "Maternal_mortality_ratio"),
+                                                     `porverty and inequality` = list("Poverty headcount ratio" = "Poverty_headcount_ratio",
+                                                                                      "GINI index" = "GINI_index"),
+                                                     `Environment` = list("Agricultural land" = "Agricultural_land",
+                                                                          "CO2 emission" = "CO2_emission",
+                                                                          "PM2.5 air pollution" = "PM2.5_air_pollution"),
+                                                     `Economy` = list("GDP" = "GDP",
+                                                                      "Gross capital formation" = "Gross_capital_formation",
+                                                                      "GDP per person employed" = "GDP_per_person_employed"),
+                                                     `States and markets` = list("Government revenue" = "Government_revenue",
+                                                                                 "Government Expense" = "Government_Expense",
+                                                                                 "Military expenditure" = "Military_expenditure",
+                                                                                 "R&D expenditure" = "Research_and_development_expenditure"),
+                                                     `Global Links` = list("External debt stocks" = "External_debt_stocks")),
+                                                selected = "Population_Total"
+                                    ),
+                                    
+                                    ### Specify country filter ----
+                                    selectInput("selectCountry_world",
+                                                "Select country for time series:",
+                                                unique(map_data_world@data$country),
+                                                selected = "France",
+                                                multiple = TRUE),
+                                    
+                                    ### Specify discretizariton method ----
+                                    selectInput("selectDiscretization_world", 
+                                                "Select disretization method:", 
+                                                choices = list("Linear" = "KPIcolor_binpal_world",
+                                                               "Quantile" = "KPIcolor_qpal_world"),
+                                                selected = "KPIcolor_binpal_world")
+                             ),
+                             ### Specify plots ----
+                             column(8, 
+                                    tabsetPanel(type = "tabs",
+                                                ### Map plot ----
+                                                tabPanel("Map World", leafletOutput("my_leaf_world")),
+                                                ### timeseirs plot ----
+                                                tabPanel("Time serie World", plotlyOutput("my_plot_world")))
+                             )
+                         ),
+                         
+                         ### Second row ----
+                         fluidRow(
+                             column(8, 
+                                    offset = 3,
+                                    wellPanel(
+                                        sliderTextInput(
+                                            inputId = "animation_world",
+                                            label = "Year range slider:",
+                                            choices = date_vector_world,
+                                            selected = date_vector_world[AnimationEnd_world],
+                                            animate = animationOptions(interval = 1000, 
+                                                                       loop = FALSE)
+                                        ),
+                                        verbatimTextOutput("date_range")
+                                    )
+                             )
+                         )
+                ),
+                
                 ### Europe panel ----
                 tabPanel("Europe",
                          ### First row ----
@@ -149,7 +298,15 @@ ui = navbarPage("OpenGeoKPI",
                                                 "Select country for time series:",
                                                 unique(map_data@data$CNTR_NAME),
                                                 selected = "France",
-                                                multiple = TRUE)
+                                                multiple = TRUE),
+                                    
+                                    ### Specify discretizariton method ----
+                                    selectInput("selectDiscretization", 
+                                                "Select disretization method:", 
+                                                choices = list("Linear" = "KPIcolor_binpal",
+                                                               "Quantile" = "KPIcolor_qpal"),
+                                                selected = "KPIcolor_binpal")
+                                    
                              ),
                              ### Specify plots ----
                              column(8, 
@@ -166,57 +323,56 @@ ui = navbarPage("OpenGeoKPI",
                              column(8, 
                                     offset = 3,
                                     wellPanel(
-                                        ### Specify time filter animation ----
-                                        # sliderInput("animation", "Looping Animation:",
-                                        #             min = min(date_vector),
-                                        #             max = max(date_vector),
-                                        #             value = min(date_vector), step = 1,
-                                        #             animate = animationOptions(interval = 1000, 
-                                        #                                        loop = FALSE))
                                         sliderTextInput(
                                             inputId = "animation",
                                             label = "Year range slider:",
                                             choices = date_vector,
-                                            selected = date_vector[1],
+                                            selected = date_vector[AnimationEnd_Europe],
                                             animate = animationOptions(interval = 1000, 
                                                                        loop = FALSE)
                                         )
                                     )
                              )
-                         ),
+                         )
                          
                          ### Thirs row ----
-                         fluidRow(
-                             column(12, offset = 0, h4("Observations"), DT::dataTableOutput("table"))
-                         )
-                ),
+                         # fluidRow(
+                         #   column(12, offset = 0, h4("Observations"), DT::dataTableOutput("table"))
+                         # )
+                )
                 
-                ### World panel ----
-                tabPanel("World",
-                         verbatimTextOutput("summary"))
+                
 )
 
 ##########################
 #### server
 ###########################
 
-server <- function(input, output) {
+server <- function(input, output, session) {
     
     
     ### leaflet map definition ----
+    ### Europe 
     output$my_leaf <- renderLeaflet({
         leaflet() %>%
             setView(lng = 2.846874031249995, lat = 46.99079193796217, zoom = 3)
     })
-    
-    ### summary definition ----
-    output$summary = renderPrint({
-        summary(map_data@data)
+    ### world 
+    output$my_leaf_world <- renderLeaflet({
+        leaflet() %>%
+            setView(lng = 2.846874031249995, lat = 46.99079193796217, zoom = 1)
     })
+    
+    # output$date_range = renderText({
+    #   paste("Start date:", min(date_vector_world), "End date:", max(date_vector_world))
+    # })
+    
+    
     
     ### reactive plots definition ----
     observe({
         
+        ### Europe ----
         # get selected date from animation
         selected_date = input$animation
         
@@ -224,10 +380,33 @@ server <- function(input, output) {
         selected_kpi = input$selectKPI
         
         # split kpi values into categories for color attribution
+        
+        discr_param = input$selectDiscretization
+        
         binpal <- colorBin("YlOrRd", 
                            map_data@data[, selected_kpi],
                            5, 
-                           pretty = TRUE)
+                           pretty = FALSE)
+        
+        qpal = colorQuantile(palette = "YlOrRd",
+                             domain = map_data@data[, selected_kpi],
+                             n = 5)
+        
+        
+        Specify_legend_colpal = function(discr_param){
+            if(discr_param == "KPIcolor_binpal"){
+                legend_pal = binpal
+            }
+            else if(discr_param == "KPIcolor_qpal"){
+                legend_pal = qpal
+            }
+            
+            return(legend_pal)
+        }
+        
+        legend_pal = Specify_legend_colpal(discr_param = discr_param)
+        
+        
         
         # filter map data based on selected filters
         map_data_selected = map_data[map_data@data$time == selected_date, ]
@@ -243,12 +422,12 @@ server <- function(input, output) {
                         dashArray = "3",
                         weight = 1,
                         opacity = 1,
-                        fillColor = ~binpal(map_data_selected@data[,selected_kpi]),
+                        fillColor = ~legend_pal(map_data_selected@data[,selected_kpi]),
                         highlightOptions = highlightOptions(weight = 2, color = "grey", fillOpacity = 0.7, bringToFront = TRUE),
                         label = ~paste0(CNTR_NAME,": ",prettyNum(map_data_selected@data[ ,selected_kpi], 
                                                                  format = "f",
                                                                  big.mark = ","))) %>%
-            addLegend(pal = binpal,
+            addLegend(pal = legend_pal,
                       values = ~ map_data_selected@data[ ,selected_kpi],
                       opacity = 0.7,
                       title = selected_kpi)
@@ -287,6 +466,107 @@ server <- function(input, output) {
         output$table <- DT::renderDataTable(
             DT::datatable(df, options = list(pageLength = 25))
         )
+        
+        
+        
+        
+        
+        ### WOrld ----
+        # get selected date from animation
+        selected_date_world = input$animation_world
+        
+        # get selected kpi from kpi filters
+        selected_kpi_world = input$selectKPI_world
+        
+        # split kpi values into categories for color attribution
+        
+        discr_param_world = input$selectDiscretization_world
+        
+        binpal_world <- colorBin("YlOrRd", 
+                                 map_data_world@data[, selected_kpi_world],
+                                 5, 
+                                 pretty = FALSE)
+        
+        qpal_world = colorQuantile(palette = "YlOrRd",
+                                   domain = map_data_world@data[, selected_kpi_world],
+                                   n = 5)
+        
+        
+        Specify_legend_colpal_world = function(discr_param_world){
+            if(discr_param_world == "KPIcolor_binpal_world"){
+                legend_pal_world = binpal_world
+            }
+            else if(discr_param_world == "KPIcolor_qpal_world"){
+                legend_pal_world = qpal_world
+            }
+            
+            return(legend_pal_world)
+        }
+        
+        legend_pal_world = Specify_legend_colpal_world(discr_param_world = discr_param_world)
+        
+        
+        # filter map data based on selected filters
+        map_data_selected_world  = map_data_world[map_data_world@data$date_ct == selected_date_world, ]
+        
+        
+        # generte filteres map
+        leafletProxy(mapId = "my_leaf_world", data = map_data_selected_world)  %>%
+            clearControls() %>%
+            addTiles() %>%
+            addPolygons(stroke = TRUE,
+                        smoothFactor = 0.3,
+                        fillOpacity = 0.8,
+                        color = "gray",
+                        dashArray = "3",
+                        weight = 1,
+                        opacity = 0.8,
+                        fillColor = ~legend_pal_world(map_data_selected_world@data[,selected_kpi_world]),
+                        highlightOptions = highlightOptions(weight = 2, color = "grey", fillOpacity = 0.7, bringToFront = TRUE),
+                        label = ~paste0(NAME,": ",prettyNum(map_data_selected_world@data[ ,selected_kpi_world],
+                                                            format = "f",
+                                                            big.mark = ","))) %>%
+            addLegend(pal = legend_pal_world,
+                      values = ~ map_data_selected_world@data[ ,selected_kpi_world],
+                      opacity = 0.7,
+                      title = selected_kpi_world)
+        
+        # filter timeserie data based on selected date
+        ts_data_selected_world = map_data_world@data[map_data_world@data$date_ct <= selected_date_world, ]
+        
+        # filter timeserie data based on selected country
+        selected_country_world = input$selectCountry_world
+        ts_data_selected_world = ts_data_selected_world[ts_data_selected_world$country %in% selected_country_world, ]
+        
+        # sort data by date
+        ts_data_selected_world = ts_data_selected_world[order(ts_data_selected_world$date_ct), ]
+        
+        
+        
+        # generate timeserie plot
+        output$my_plot_world <- renderPlotly({
+            
+            fig = plot_ly(x = ~ts_data_selected_world$date_ct,
+                          y = ~ts_data_selected_world[ ,selected_kpi_world],
+                          color = ~ts_data_selected_world$country,
+                          mode = "lines+markers")
+            
+            fig = fig %>% layout(title = paste("Indicator: ", selected_kpi_world, sp = ""),
+                                 xaxis = list(title = "Dates",
+                                              zeroline = TRUE),
+                                 yaxis = list(title =  selected_kpi_world,
+                                              zeroline = TRUE))
+            fig
+        })
+        
+        # # prepare table to plot
+        # # df = map_data_selected@data
+        # df = map_data_world@data
+        # 
+        # # plot table
+        # output$table <- DT::renderDataTable(
+        #   DT::datatable(df, options = list(pageLength = 25))
+        # )
         
     })
 }

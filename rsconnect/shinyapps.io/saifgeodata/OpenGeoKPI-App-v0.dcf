@@ -5,8 +5,9 @@ account: saifgeodata
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2279704
-bundleId: 3131842
+bundleId: 3247642
 url: https://saifgeodata.shinyapps.io/OpenGeoKPI-App-v0/
-when: 1589203822.85749
+when: 1591714856.04572
 asMultiple: FALSE
 asStatic: FALSE
+ignoredFiles: app work.R|ne_50m_admin_0_countries.zip|test refresh 2.R|test refresh.R|working scripts.R
